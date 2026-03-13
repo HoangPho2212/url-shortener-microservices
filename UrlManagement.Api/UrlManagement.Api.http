@@ -1,6 +1,15 @@
 @UrlManagement.Api_HostAddress = http://localhost:5290
 
-GET {{UrlManagement.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Shorten URL
+POST {{UrlManagement.Api_HostAddress}}/api/urls/shorten
+Content-Type: application/json
 
-###
+{
+  "originalUrl": "https://www.google.com"
+}
+
+### Get Original URL (Lookup)
+GET {{UrlManagement.Api_HostAddress}}/api/urls/abc1234
+
+### Redirect (Using root)
+GET {{UrlManagement.Api_HostAddress}}/abc1234
