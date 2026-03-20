@@ -39,6 +39,7 @@ builder.Services.AddScoped<IMongoCollection<User>>(sp =>
     return database.GetCollection<User>(mongoDbSettings.CollectionName);
 });
 
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

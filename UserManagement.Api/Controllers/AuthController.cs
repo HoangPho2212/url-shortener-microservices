@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using MongoDB.Driver;
 using UserManagement.Api.DTOs;
 using UserManagement.Api.Models;
 using UserManagement.Api.Services;
@@ -11,19 +10,19 @@ namespace UserManagement.Api.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly IMongoCollection<User> _users;
+    private readonly IUserRepository _userRepository;
     private readonly ITokenService _tokenService;
 
-    public AuthController(IMongoCollection<User> users, ITokenService tokenService)
+    public AuthController(IUserRepository userRepository, ITokenService tokenService)
     {
-        _users = users;
+        _userRepository = userRepository;
         _tokenService = tokenService;
     }
 
     [HttpPost("register")]
     public async Task<ActionResult> Register(UserCreateDto userDto)
     {
-        if (await _users.Find(u => u.Email == userDto.Email).AnyAsync())
+        if (await _userRepository.GetByEmailAsync(userDto.Email) != null)
         {
             return BadRequest("Email is already taken");
         }
@@ -37,7 +36,7 @@ public class AuthController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        await _users.InsertOneAsync(user);
+        await _userRepository.CreateAsync(user);
 
         return CreatedAtAction(nameof(Register), new { id = user.Id }, new { user.Id, user.Username, user.Email });
     }
@@ -45,7 +44,7 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponseDto>> Login(UserLoginDto loginDto)
     {
-        var user = await _users.Find(u => u.Email == loginDto.Email).SingleOrDefaultAsync();
+        var user = await _userRepository.GetByEmailAsync(loginDto.Email);
 
         if (user == null || !BC.Verify(loginDto.Password, user.PasswordHash))
         {
