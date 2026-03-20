@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using UserManagement.Api.Data;
 using UserManagement.Api.DTOs;
 using UserManagement.Api.Models;
 using UserManagement.Api.Services;
@@ -12,19 +10,19 @@ namespace UserManagement.Api.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly UserDbContext _db;
+    private readonly IUserRepository _userRepository;
     private readonly ITokenService _tokenService;
 
-    public AuthController(UserDbContext db, ITokenService tokenService)
+    public AuthController(IUserRepository userRepository, ITokenService tokenService)
     {
-        _db = db;
+        _userRepository = userRepository;
         _tokenService = tokenService;
     }
 
     [HttpPost("register")]
     public async Task<ActionResult> Register(UserCreateDto userDto)
     {
-        if (await _db.Users.AnyAsync(u => u.Email == userDto.Email))
+        if (await _userRepository.GetByEmailAsync(userDto.Email) != null)
         {
             return BadRequest("Email is already taken");
         }
@@ -38,8 +36,7 @@ public class AuthController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
+        await _userRepository.CreateAsync(user);
 
         return CreatedAtAction(nameof(Register), new { id = user.Id }, new { user.Id, user.Username, user.Email });
     }
@@ -47,7 +44,7 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponseDto>> Login(UserLoginDto loginDto)
     {
-        var user = await _db.Users.SingleOrDefaultAsync(u => u.Email == loginDto.Email);
+        var user = await _userRepository.GetByEmailAsync(loginDto.Email);
 
         if (user == null || !BC.Verify(loginDto.Password, user.PasswordHash))
         {

@@ -1,24 +1,24 @@
 {
   "Routes": [
     {
-      "DownstreamPathTemplate": "/api/user/{everything}",
-      "DownstreamScheme": "https",
+      "DownstreamPathTemplate": "/api/Auth/{everything}",
+      "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
           "Host": "localhost",
-          "Port": 7151
+          "Port": 5015
         }
       ],
       "UpstreamPathTemplate": "/gateway/auth/{everything}",
       "UpstreamHttpMethod": [ "Get", "Post", "Put", "Delete" ]
     },
     {
-      "DownstreamPathTemplate": "/api/url/{everything}",
-      "DownstreamScheme": "https",
+      "DownstreamPathTemplate": "/api/Urls/{everything}",
+      "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
           "Host": "localhost",
-          "Port": 7240
+          "Port": 5291
         }
       ],
       "UpstreamPathTemplate": "/gateway/urls/{everything}",
@@ -26,6 +26,6 @@
     }
   ],
   "GlobalConfiguration": {
-    "BaseUrl": "https://localhost:5000"
+    "BaseUrl": "http://localhost:5130"
   }
 }

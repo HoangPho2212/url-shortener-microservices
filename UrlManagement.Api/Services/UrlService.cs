@@ -47,8 +47,16 @@ public class UrlService : IUrlService
 
     public async Task<string?> GetOriginalUrlAsync(string shortCode)
     {
-        var urlRecord = await _urls.Find(u => u.ShortUrl == shortCode).FirstOrDefaultAsync();
+        var filter = Builders<UrlRecord>.Filter.Eq(u => u.ShortUrl, shortCode);
+        var update = Builders<UrlRecord>.Update.Inc(u => u.Clicks, 1);
+        
+        var urlRecord = await _urls.FindOneAndUpdateAsync(filter, update);
         return urlRecord?.OriginalUrl;
+    }
+
+    public async Task<List<UrlRecord>> GetUrlsByUserAsync(string userId)
+    {
+        return await _urls.Find(u => u.CreatedBy == userId).ToListAsync();
     }
 
     private string GenerateShortCode(int length)

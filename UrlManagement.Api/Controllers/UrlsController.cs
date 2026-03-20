@@ -1,10 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using UrlManagement.Api.Services;
 
 namespace UrlManagement.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class UrlsController : ControllerBase
 {
     private readonly IUrlService _urlService;
@@ -22,15 +25,37 @@ public class UrlsController : ControllerBase
             return BadRequest("Original URL is required.");
         }
 
-        // For now, use a hardcoded user ID. 
-        // In a real scenario, this would come from the JWT token.
-        var userId = "anonymous"; 
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
         
         var shortCode = await _urlService.ShortenUrlAsync(request.OriginalUrl, userId);
-        return Ok(new { shortCode, shortUrl = $"{Request.Scheme}://{Request.Host}/{shortCode}" });
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        return Ok(new { shortCode, shortUrl = $"{baseUrl}/{shortCode}" });
+    }
+
+    [HttpGet("my")]
+    public async Task<IActionResult> GetMyUrls()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var urls = await _urlService.GetUrlsByUserAsync(userId);
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        
+        var response = urls.Select(u => new 
+        {
+            u.Id,
+            u.OriginalUrl,
+            u.ShortUrl,
+            FullShortUrl = $"{baseUrl}/{u.ShortUrl}",
+            u.Clicks,
+            u.CreatedAt
+        });
+
+        return Ok(response);
     }
 
     [HttpGet("{shortCode}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetOriginal(string shortCode)
     {
         var originalUrl = await _urlService.GetOriginalUrlAsync(shortCode);
