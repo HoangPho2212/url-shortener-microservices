@@ -1,12 +1,13 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import Login from '../components/Login.vue';
 import Register from '../components/Register.vue';
+import Dashboard from '../components/Dashboard.vue';
 
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
-    name: 'Home',
-    component: () => import('../App.vue'),
+    name: 'Dashboard',
+    component: Dashboard,
     meta: { requiresAuth: true }
   },
   {
