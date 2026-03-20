@@ -18,11 +18,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Using Include="Xunit" />
+    <ProjectReference Include="..\UrlManagement.Api\UrlManagement.Api.csproj" />
+    <ProjectReference Include="..\UserManagement.Api\UserManagement.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\UserManagement.Api\UserManagement.Api.csproj" />
+    <Using Include="Xunit" />
   </ItemGroup>
 
 </Project>
