@@ -7,7 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\**\*.cs" Link="Shared\%(RecursiveDir)%(FileName)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="9.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.2" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.11" />
     <PackageReference Include="MongoDB.Driver" Version="3.7.1" />
