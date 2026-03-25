@@ -2,10 +2,24 @@ using MongoDB.Driver;
 using StackExchange.Redis; 
 using UrlManagement.Api.Settings;
 using UrlManagement.Api.Services;
+using MassTransit;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+
+// RabbitMQ Configuration
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration.GetValue<string>("RabbitMq:Host") ?? "localhost", "/", h =>
+        {
+            h.Username(builder.Configuration.GetValue<string>("RabbitMq:Username") ?? "guest");
+            h.Password(builder.Configuration.GetValue<string>("RabbitMq:Password") ?? "guest");
+        });
+    });
+});
 
 var mongoDbSettings = builder.Configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
 builder.Services.AddSingleton(mongoDbSettings!);

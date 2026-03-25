@@ -9,6 +9,7 @@ using UserManagement.Api.Settings;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
+using MassTransit;
 
 var builder = WebApplication.CreateBuilder(args);
 BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
@@ -16,6 +17,19 @@ BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// RabbitMQ Configuration
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration.GetValue<string>("RabbitMq:Host") ?? "localhost", "/", h =>
+        {
+            h.Username(builder.Configuration.GetValue<string>("RabbitMq:Username") ?? "guest");
+            h.Password(builder.Configuration.GetValue<string>("RabbitMq:Password") ?? "guest");
+        });
+    });
+});
 
 builder.Services.AddCors(options =>
 {

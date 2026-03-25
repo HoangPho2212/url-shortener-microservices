@@ -1,17 +1,21 @@
 using MongoDB.Driver;
 using UrlManagement.Api.Models;
 using UrlManagement.Api.Settings;
+using MassTransit;
+using Shared.Contracts;
 
 namespace UrlManagement.Api.Services;
 
 public class UrlService : IUrlService
 {
     private readonly IMongoCollection<UrlRecord> _urls;
+    private readonly IPublishEndpoint _publishEndpoint;
     private const string Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private readonly Random _random = new();
 
-    public UrlService(IMongoClient mongoClient, MongoDbSettings settings)
+    public UrlService(IMongoClient mongoClient, MongoDbSettings settings, IPublishEndpoint publishEndpoint)
     {
+        _publishEndpoint = publishEndpoint;
         var database = mongoClient.GetDatabase(settings.DatabaseName);
         _urls = database.GetCollection<UrlRecord>(settings.CollectionName);
 
@@ -42,6 +46,15 @@ public class UrlService : IUrlService
         };
 
         await _urls.InsertOneAsync(urlRecord);
+
+        // Publish UrlShortenedEvent
+        await _publishEndpoint.Publish<IUrlShortenedEvent>(new
+        {
+            ShortCode = shortCode,
+            OriginalUrl = originalUrl,
+            CreatedBy = userId
+        });
+
         return shortCode;
     }
 
@@ -51,6 +64,18 @@ public class UrlService : IUrlService
         var update = Builders<UrlRecord>.Update.Inc(u => u.Clicks, 1);
         
         var urlRecord = await _urls.FindOneAndUpdateAsync(filter, update);
+
+        if (urlRecord != null)
+        {
+            // Publish UrlClickedEvent
+            await _publishEndpoint.Publish<IUrlClickedEvent>(new
+            {
+                ShortCode = shortCode,
+                ClickedAt = DateTime.UtcNow,
+                IpAddress = (string?)null // Could be added from HttpContext if needed
+            });
+        }
+
         return urlRecord?.OriginalUrl;
     }
 
