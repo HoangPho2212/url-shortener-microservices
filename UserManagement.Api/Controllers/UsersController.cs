@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using UserManagement.Api.DTOs;
 using UserManagement.Api.Models;
 using UserManagement.Api.Services;
+using MassTransit;
+using Shared.Contracts;
 using BC = BCrypt.Net.BCrypt;
 
 namespace UserManagement.Api.Controllers;
@@ -13,10 +15,12 @@ namespace UserManagement.Api.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IUserRepository _userRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public UsersController(IUserRepository userRepository)
+    public UsersController(IUserRepository userRepository, IPublishEndpoint publishEndpoint)
     {
         _userRepository = userRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     [HttpGet]
@@ -60,6 +64,14 @@ public class UsersController : ControllerBase
         if (user == null) return NotFound();
 
         await _userRepository.DeleteAsync(id);
+
+        // Publish Event to RabbitMQ
+        await _publishEndpoint.Publish<IUserAccountDeletedEvent>(new
+        {
+            UserId = user.Id,
+            user.Email
+        });
+
         return Ok(new { user.Id, user.Username, user.Email });
     }
 }

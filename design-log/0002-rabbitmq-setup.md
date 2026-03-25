@@ -21,6 +21,7 @@ Currently, all logic is synchronous within each microservice. For example, when 
 
 ### 2. Events to Implement
 *   `UserRegisteredEvent`: Published by `UserManagement.Api` when a new user signs up.
+*   `UserAccountDeletedEvent`: Published by `UserManagement.Api` when a user deletes their account.
 *   `UrlShortenedEvent`: Published by `UrlManagement.Api` when a new short link is created.
 *   `UrlClickedEvent`: Published by `UrlManagement.Api` when a link is accessed.
 

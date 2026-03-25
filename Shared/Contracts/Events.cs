@@ -20,3 +20,9 @@ public interface IUrlClickedEvent
     DateTime ClickedAt { get; }
     string? IpAddress { get; }
 }
+
+public interface IUserAccountDeletedEvent
+{
+    Guid UserId { get; }
+    string Email { get; }
+}
