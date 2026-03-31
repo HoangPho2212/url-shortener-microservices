@@ -6,6 +6,8 @@ using UserManagement.Api.Services;
 using MassTransit;
 using Shared.Contracts;
 using BC = BCrypt.Net.BCrypt;
+using MassTransit;
+using Shared.Contracts;
 
 namespace UserManagement.Api.Controllers;
 
@@ -65,11 +67,10 @@ public class UsersController : ControllerBase
 
         await _userRepository.DeleteAsync(id);
 
-        // Publish Event to RabbitMQ
         await _publishEndpoint.Publish<IUserAccountDeletedEvent>(new
         {
             UserId = user.Id,
-            user.Email
+            Email = user.Email
         });
 
         return Ok(new { user.Id, user.Username, user.Email });

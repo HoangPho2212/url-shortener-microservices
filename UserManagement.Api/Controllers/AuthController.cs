@@ -5,6 +5,8 @@ using UserManagement.Api.Services;
 using MassTransit;
 using Shared.Contracts;
 using BC = BCrypt.Net.BCrypt;
+using MassTransit; 
+using Shared.Contracts;
 
 namespace UserManagement.Api.Controllers;
 
@@ -14,8 +16,9 @@ public class AuthController : ControllerBase
 {
     private readonly IUserRepository _userRepository;
     private readonly ITokenService _tokenService;
-    private readonly IPublishEndpoint _publishEndpoint;
+    private readonly IPublishEndpoint _publishEndpoint; 
 
+    
     public AuthController(IUserRepository userRepository, ITokenService tokenService, IPublishEndpoint publishEndpoint)
     {
         _userRepository = userRepository;
@@ -42,12 +45,11 @@ public class AuthController : ControllerBase
 
         await _userRepository.CreateAsync(user);
 
-        // Publish Event to RabbitMQ
         await _publishEndpoint.Publish<IUserRegisteredEvent>(new
         {
             UserId = user.Id,
-            user.Email,
-            user.Username
+            Email = user.Email,
+            Username = user.Username
         });
 
         return CreatedAtAction(nameof(Register), new { id = user.Id }, new { user.Id, user.Username, user.Email });

@@ -12,4 +12,6 @@ public class UrlMapping
     public long NumericId { get; set; } 
     public string LongUrl { get; set; } = string.Empty;
     public string? ShortCode { get; set; }
+
+    public string? CreatedBy { get; set; }
 }
