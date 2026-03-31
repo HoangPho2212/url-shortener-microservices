@@ -7,6 +7,24 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
+// RabbitMQ Configuration
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<UserAccountDeletedConsumer>();
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration.GetValue<string>("RabbitMq:Host") ?? "localhost", "/", h =>
+        {
+            h.Username(builder.Configuration.GetValue<string>("RabbitMq:Username") ?? "guest");
+            h.Password(builder.Configuration.GetValue<string>("RabbitMq:Password") ?? "guest");
+        });
+        cfg.ReceiveEndpoint("user-deleted-event-queue", e =>
+        {
+            e.ConfigureConsumer<UserAccountDeletedConsumer>(context);
+        });
+    });
+});
+
 var mongoDbSettings = builder.Configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
 builder.Services.AddSingleton(mongoDbSettings!);
 builder.Services.AddSingleton<IMongoClient>(new MongoClient(mongoDbSettings!.ConnectionString));

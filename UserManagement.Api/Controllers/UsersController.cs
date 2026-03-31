@@ -4,6 +4,8 @@ using UserManagement.Api.DTOs;
 using UserManagement.Api.Models;
 using UserManagement.Api.Services;
 using BC = BCrypt.Net.BCrypt;
+using MassTransit;
+using Shared.Contracts;
 
 namespace UserManagement.Api.Controllers;
 
@@ -13,10 +15,12 @@ namespace UserManagement.Api.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IUserRepository _userRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public UsersController(IUserRepository userRepository)
+    public UsersController(IUserRepository userRepository, IPublishEndpoint publishEndpoint)
     {
         _userRepository = userRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     [HttpGet]
@@ -60,6 +64,13 @@ public class UsersController : ControllerBase
         if (user == null) return NotFound();
 
         await _userRepository.DeleteAsync(id);
+
+        await _publishEndpoint.Publish<IUserAccountDeletedEvent>(new
+        {
+            UserId = user.Id,
+            Email = user.Email
+        });
+
         return Ok(new { user.Id, user.Username, user.Email });
     }
 }
