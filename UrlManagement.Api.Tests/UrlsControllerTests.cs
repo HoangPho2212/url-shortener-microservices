@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using UrlManagement.Api.Controllers;
 using UrlManagement.Api.Data;
-using UrlManagement.Api.Events;
+using Shared.Contracts;
 using MassTransit.Testing;
 using FluentAssertions;
 using Xunit;
@@ -46,7 +46,7 @@ public class UrlsControllerTests : IClassFixture<CustomWebApplicationFactory<Pro
         Assert.NotNull(result);
 
         // Verify Event
-        (await harness.Published.Any<UrlShortenedEvent>(x => x.Context.Message.ShortCode == result.ShortCode)).Should().BeTrue();
+        (await harness.Published.Any<IUrlShortenedEvent>(x => x.Context.Message.ShortCode == result.ShortCode)).Should().BeTrue();
     }
 
     [Fact]
