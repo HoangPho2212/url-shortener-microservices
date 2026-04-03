@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using UserManagement.Api.Data;
 using UserManagement.Api.Models;
-using UserManagement.Api.Events;
+using Shared.Contracts;
 using MassTransit;
 
 namespace UserManagement.Api.Controllers;
@@ -46,7 +46,7 @@ public class AuthController : ControllerBase
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
-        await _publishEndpoint.Publish(new UserRegisteredEvent
+        await _publishEndpoint.Publish(new IUserRegisteredEvent
         {
             UserId = user.Id,
             Email = user.Email,

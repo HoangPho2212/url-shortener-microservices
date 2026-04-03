@@ -1,28 +1,31 @@
+using System;
+
 namespace Shared.Contracts;
 
-public interface IUserRegisteredEvent
+public record IUserRegisteredEvent
 {
-    Guid UserId { get; }
-    string Email { get; }
-    string Username { get; }
+    public Guid UserId { get; init; }
+    public string Email { get; init; } = string.Empty;
+    public string Username { get; init; } = string.Empty;
 }
 
-public interface IUrlShortenedEvent
+public record IUrlShortenedEvent
 {
-    string ShortCode { get; }
-    string OriginalUrl { get; }
-    string CreatedBy { get; }
+    public Guid Id { get; init; }
+    public string OriginalUrl { get; init; } = string.Empty;
+    public string ShortCode { get; init; } = string.Empty;
+    public Guid? UserId { get; init; }
 }
 
-public interface IUrlClickedEvent
+public record IUrlClickedEvent
 {
-    string ShortCode { get; }
-    DateTime ClickedAt { get; }
-    string? IpAddress { get; }
+    public string ShortCode { get; init; } = string.Empty;
+    public DateTime ClickedAt { get; init; }
+    public string? IpAddress { get; init; }
 }
 
-public interface IUserAccountDeletedEvent
+public record IUserAccountDeletedEvent
 {
-    Guid UserId { get; }
-    string Email { get; }
+    public Guid UserId { get; init; }
+    public string Email { get; init; } = string.Empty;
 }

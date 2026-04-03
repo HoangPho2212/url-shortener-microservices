@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using UrlManagement.Api.Data;
 using UrlManagement.Api.Models;
 using UrlManagement.Api.Services;
-using UrlManagement.Api.Events;
+using Shared.Contracts;
 using MassTransit;
 
 namespace UrlManagement.Api.Controllers;
@@ -55,7 +55,7 @@ public class UrlsController : ControllerBase
         _context.ShortUrls.Add(shortUrl);
         await _context.SaveChangesAsync();
 
-        await _publishEndpoint.Publish(new UrlShortenedEvent
+        await _publishEndpoint.Publish(new IUrlShortenedEvent
         {
             Id = shortUrl.Id,
             OriginalUrl = shortUrl.OriginalUrl,

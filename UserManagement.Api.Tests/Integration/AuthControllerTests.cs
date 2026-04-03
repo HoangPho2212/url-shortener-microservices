@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using UserManagement.Api.Models;
 using UserManagement.Api.Tests.Helpers;
-using UserManagement.Api.Events;
+using Shared.Contracts;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
