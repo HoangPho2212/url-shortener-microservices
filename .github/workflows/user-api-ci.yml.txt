@@ -1,0 +1,58 @@
+name: User Management API CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'UserManagement.Api/**'
+      - 'Shared/**'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # SUBTASK: Build and Test automatically
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore UserManagement.Api/UserManagement.Api.csproj
+
+      - name: Build project
+        run: dotnet build UserManagement.Api/UserManagement.Api.csproj --configuration Release --no-restore
+
+      - name: Run xUnit Tests
+        run: dotnet test UserManagement.Api.Tests/UserManagement.Api.Tests.csproj --configuration Release --no-build
+
+  # MAIN TASK: Dockerize and Deploy
+  docker-and-deploy:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: UserManagement.Api/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/usermanagement-api:latest
+
+      - name: Trigger Deployment on Render
+        run: curl -X GET ${{ secrets.RENDER_DEPLOY_HOOK_USER }}
