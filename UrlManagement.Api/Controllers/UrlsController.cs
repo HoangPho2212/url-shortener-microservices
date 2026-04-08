@@ -1,74 +1,99 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using UrlManagement.Api.Data;
+using UrlManagement.Api.Models;
 using UrlManagement.Api.Services;
+using Shared.Contracts;
+using MassTransit;
 
 namespace UrlManagement.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public class UrlsController : ControllerBase
 {
-    private readonly IUrlService _urlService;
+    private readonly UrlDbContext _context;
+    private readonly IUrlShorteningService _urlShorteningService;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public UrlsController(IUrlService urlService)
+    public UrlsController(UrlDbContext context, IUrlShorteningService urlShorteningService, IPublishEndpoint publishEndpoint)
     {
-        _urlService = urlService;
+        _context = context;
+        _urlShorteningService = urlShorteningService;
+        _publishEndpoint = publishEndpoint;
     }
 
     [HttpPost("shorten")]
     public async Task<IActionResult> Shorten([FromBody] ShortenRequest request)
     {
-        if (string.IsNullOrEmpty(request.OriginalUrl))
+        if (!Uri.TryCreate(request.Url, UriKind.Absolute, out _))
         {
-            return BadRequest("Original URL is required.");
+            return BadRequest("Invalid URL format.");
         }
 
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
-        
-        var shortCode = await _urlService.ShortenUrlAsync(request.OriginalUrl, userId);
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-        return Ok(new { shortCode, shortUrl = $"{baseUrl}/{shortCode}" });
-    }
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        Guid? userId = userIdClaim != null ? Guid.Parse(userIdClaim) : null;
 
-    [HttpGet("my")]
-    public async Task<IActionResult> GetMyUrls()
-    {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-        var urls = await _urlService.GetUrlsByUserAsync(userId);
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-        
-        var response = urls.Select(u => new 
+        string shortCode;
+        bool exists;
+        do
         {
-            u.Id,
-            u.OriginalUrl,
-            u.ShortUrl,
-            FullShortUrl = $"{baseUrl}/{u.ShortUrl}",
-            u.Clicks,
-            u.CreatedAt
+            shortCode = _urlShorteningService.GenerateShortCode();
+            exists = await _context.ShortUrls.AnyAsync(u => u.ShortCode == shortCode);
+        } while (exists);
+
+        var shortUrl = new ShortUrl
+        {
+            Id = Guid.NewGuid(),
+            OriginalUrl = request.Url,
+            ShortCode = shortCode,
+            UserId = userId
+        };
+
+        _context.ShortUrls.Add(shortUrl);
+        await _context.SaveChangesAsync();
+
+        await _publishEndpoint.Publish(new IUrlShortenedEvent
+        {
+            Id = shortUrl.Id,
+            OriginalUrl = shortUrl.OriginalUrl,
+            ShortCode = shortUrl.ShortCode,
+            UserId = shortUrl.UserId
         });
 
-        return Ok(response);
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        return Ok(new { ShortUrl = $"{baseUrl}/api/urls/{shortCode}", ShortCode = shortCode });
     }
 
     [HttpGet("{shortCode}")]
-    [AllowAnonymous]
-    public async Task<IActionResult> GetOriginal(string shortCode)
+    public async Task<IActionResult> RedirectTo(string shortCode)
     {
-        var originalUrl = await _urlService.GetOriginalUrlAsync(shortCode);
-        if (originalUrl == null)
+        var shortUrl = await _context.ShortUrls.FirstOrDefaultAsync(u => u.ShortCode == shortCode);
+
+        if (shortUrl == null)
         {
             return NotFound();
         }
 
-        return Ok(new { originalUrl });
+        return Redirect(shortUrl.OriginalUrl);
+    }
+
+    [Authorize]
+    [HttpGet("my-urls")]
+    public async Task<IActionResult> GetMyUrls()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null) return Unauthorized();
+
+        var userId = Guid.Parse(userIdClaim);
+        var urls = await _context.ShortUrls
+            .Where(u => u.UserId == userId)
+            .ToListAsync();
+
+        return Ok(urls);
     }
 }
 
-public class ShortenRequest
-{
-    public string OriginalUrl { get; set; } = null!;
-}
+public record ShortenRequest(string Url);

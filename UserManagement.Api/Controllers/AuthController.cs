@@ -1,10 +1,13 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
-using UserManagement.Api.DTOs;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using UserManagement.Api.Data;
 using UserManagement.Api.Models;
-using UserManagement.Api.Services;
-using MassTransit;
 using Shared.Contracts;
-using BC = BCrypt.Net.BCrypt;
+using MassTransit;
 
 namespace UserManagement.Api.Controllers;
 
@@ -12,23 +15,23 @@ namespace UserManagement.Api.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly IUserRepository _userRepository;
-    private readonly ITokenService _tokenService;
+    private readonly AppDbContext _context;
+    private readonly IConfiguration _configuration;
     private readonly IPublishEndpoint _publishEndpoint;
 
-    public AuthController(IUserRepository userRepository, ITokenService tokenService, IPublishEndpoint publishEndpoint)
+    public AuthController(AppDbContext context, IConfiguration configuration, IPublishEndpoint publishEndpoint)
     {
-        _userRepository = userRepository;
-        _tokenService = tokenService;
+        _context = context;
+        _configuration = configuration;
         _publishEndpoint = publishEndpoint;
     }
 
     [HttpPost("register")]
-    public async Task<ActionResult> Register(UserCreateDto userDto)
+    public async Task<IActionResult> Register(UserCreateDto userDto)
     {
-        if (await _userRepository.GetByEmailAsync(userDto.Email) != null)
+        if (await _context.Users.AnyAsync(u => u.Email == userDto.Email))
         {
-            return BadRequest("Email is already taken");
+            return BadRequest("User already exists.");
         }
 
         var user = new User
@@ -36,34 +39,58 @@ public class AuthController : ControllerBase
             Id = Guid.NewGuid(),
             Username = userDto.Username,
             Email = userDto.Email,
-            PasswordHash = BC.HashPassword(userDto.Password),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
             CreatedAt = DateTime.UtcNow
         };
 
-        await _userRepository.CreateAsync(user);
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
 
-        // Publish Event to RabbitMQ
-        await _publishEndpoint.Publish<IUserRegisteredEvent>(new
+        await _publishEndpoint.Publish(new IUserRegisteredEvent
         {
             UserId = user.Id,
-            user.Email,
-            user.Username
+            Email = user.Email,
+            Username = user.Username
         });
 
-        return CreatedAtAction(nameof(Register), new { id = user.Id }, new { user.Id, user.Username, user.Email });
+        return Ok("User registered successfully.");
     }
 
     [HttpPost("login")]
-    public async Task<ActionResult<AuthResponseDto>> Login(UserLoginDto loginDto)
+    public async Task<IActionResult> Login(UserLoginDto loginDto)
     {
-        var user = await _userRepository.GetByEmailAsync(loginDto.Email);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == loginDto.Email);
 
-        if (user == null || !BC.Verify(loginDto.Password, user.PasswordHash))
+        if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
         {
-            return Unauthorized();
+            return Unauthorized("Invalid email or password.");
         }
 
-        var token = _tokenService.CreateToken(user);
-        return Ok(new AuthResponseDto(token, user.Username, user.Email));
+        var token = GenerateJwtToken(user);
+        return Ok(new { token });
+    }
+
+    private string GenerateJwtToken(User user)
+    {
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var secretKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]!));
+        var credentials = new SigningCredentials(secretKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: jwtSettings["Issuer"],
+            audience: jwtSettings["Audience"],
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(double.Parse(jwtSettings["ExpirationInMinutes"]!)),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

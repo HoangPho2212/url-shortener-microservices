@@ -12,13 +12,19 @@ public class AuthControllerTests
 {
     private readonly Mock<IUserRepository> _mockRepo;
     private readonly Mock<ITokenService> _mockTokenService;
+    private readonly Mock<MassTransit.IPublishEndpoint> _mockPublishEndpoint;
     private readonly AuthController _controller;
 
     public AuthControllerTests()
     {
         _mockRepo = new Mock<IUserRepository>();
         _mockTokenService = new Mock<ITokenService>();
-        _controller = new AuthController(_mockRepo.Object, _mockTokenService.Object);
+        _mockPublishEndpoint = new Mock<MassTransit.IPublishEndpoint>();
+
+        
+        _controller = new AuthController(
+            _mockRepo.Object,_mockTokenService.Object,_mockPublishEndpoint.Object
+        );
     }
 
     [Fact]
