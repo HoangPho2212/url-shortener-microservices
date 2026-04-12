@@ -1,13 +1,10 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using UserManagement.Api.Data;
+using UserManagement.Api.DTOs;
 using UserManagement.Api.Models;
-using Shared.Contracts;
+using UserManagement.Api.Services;
 using MassTransit;
+using Shared.Contracts;
+using BC = BCrypt.Net.BCrypt;
 
 namespace UserManagement.Api.Controllers;
 
@@ -15,23 +12,25 @@ namespace UserManagement.Api.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly AppDbContext _context;
-    private readonly IConfiguration _configuration;
+    private readonly IUserRepository _userRepository;
+    private readonly ITokenService _tokenService;
     private readonly IPublishEndpoint _publishEndpoint;
 
-    public AuthController(AppDbContext context, IConfiguration configuration, IPublishEndpoint publishEndpoint)
+    public AuthController(IUserRepository userRepository, ITokenService tokenService, IPublishEndpoint publishEndpoint)
     {
-        _context = context;
-        _configuration = configuration;
+        _userRepository = userRepository;
+        _tokenService = tokenService;
         _publishEndpoint = publishEndpoint;
     }
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register(UserCreateDto userDto)
+    public async Task<ActionResult> Register(UserCreateDto userDto)
     {
-        if (await _context.Users.AnyAsync(u => u.Email == userDto.Email))
+        Console.WriteLine($"[DEBUG] Registering user: {userDto.Email}");
+        if (await _userRepository.GetByEmailAsync(userDto.Email) != null)
         {
-            return BadRequest("User already exists.");
+            Console.WriteLine($"[DEBUG] User already exists: {userDto.Email}");
+            return BadRequest("Email is already taken");
         }
 
         var user = new User
@@ -39,58 +38,52 @@ public class AuthController : ControllerBase
             Id = Guid.NewGuid(),
             Username = userDto.Username,
             Email = userDto.Email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
+            PasswordHash = BC.HashPassword(userDto.Password),
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
+        await _userRepository.CreateAsync(user);
+        Console.WriteLine($"[DEBUG] User created in MongoDB with ID: {user.Id}");
 
-        await _publishEndpoint.Publish(new IUserRegisteredEvent
+        // Publish Event to RabbitMQ
+        try 
         {
-            UserId = user.Id,
-            Email = user.Email,
-            Username = user.Username
-        });
+            await _publishEndpoint.Publish<IUserRegisteredEvent>(new
+            {
+                UserId = user.Id,
+                user.Email,
+                user.Username
+            });
+            Console.WriteLine("[DEBUG] Published UserRegisteredEvent to RabbitMQ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DEBUG] Failed to publish event: {ex.Message}");
+        }
 
-        return Ok("User registered successfully.");
+        return CreatedAtAction(nameof(Register), new { id = user.Id }, new { user.Id, user.Username, user.Email });
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login(UserLoginDto loginDto)
+    public async Task<ActionResult<AuthResponseDto>> Login(UserLoginDto loginDto)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == loginDto.Email);
+        Console.WriteLine($"[DEBUG] Login attempt for: {loginDto.Email}");
+        var user = await _userRepository.GetByEmailAsync(loginDto.Email);
 
-        if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+        if (user == null)
         {
-            return Unauthorized("Invalid email or password.");
+            Console.WriteLine($"[DEBUG] Login failed: User {loginDto.Email} not found in database.");
+            return Unauthorized();
         }
 
-        var token = GenerateJwtToken(user);
-        return Ok(new { token });
-    }
-
-    private string GenerateJwtToken(User user)
-    {
-        var jwtSettings = _configuration.GetSection("JwtSettings");
-        var secretKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]!));
-        var credentials = new SigningCredentials(secretKey, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
+        if (!BC.Verify(loginDto.Password, user.PasswordHash))
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
+            Console.WriteLine($"[DEBUG] Login failed: Incorrect password for {loginDto.Email}.");
+            return Unauthorized();
+        }
 
-        var token = new JwtSecurityToken(
-            issuer: jwtSettings["Issuer"],
-            audience: jwtSettings["Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(double.Parse(jwtSettings["ExpirationInMinutes"]!)),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        Console.WriteLine($"[DEBUG] Login successful for: {loginDto.Email}");
+        var token = _tokenService.CreateToken(user);
+        return Ok(new AuthResponseDto(token, user.Username, user.Email));
     }
 }

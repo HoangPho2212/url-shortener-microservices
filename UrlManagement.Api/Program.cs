@@ -1,106 +1,106 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
-using UrlManagement.Api.Data;
+using MongoDB.Driver;
+using StackExchange.Redis;
+using UrlManagement.Api.Settings;
 using UrlManagement.Api.Services;
 using MassTransit;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddOpenApi();
 
-// Configure MassTransit
+// RabbitMQ Configuration
 builder.Services.AddMassTransit(x =>
 {
+    x.AddConsumer<UserAccountDeletedConsumer>();
+
     x.UsingRabbitMq((context, cfg) =>
     {
-        cfg.Host(builder.Configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost", "/");
+        cfg.Host(builder.Configuration.GetValue<string>("RabbitMq:Host") ?? "rabbitmq", "/", h =>
+        {
+            h.Username(builder.Configuration.GetValue<string>("RabbitMq:Username") ?? "guest");
+            h.Password(builder.Configuration.GetValue<string>("RabbitMq:Password") ?? "guest");
+        });
+
+        cfg.ConfigureEndpoints(context);
     });
 });
 
-// Configure EF Core with PostgreSQL
-if (!builder.Environment.IsEnvironment("Testing"))
+builder.Services.AddCors(options =>
 {
-    builder.Services.AddDbContext<UrlDbContext>(options =>
-        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-}
-
-// Register services
-builder.Services.AddScoped<IUrlShorteningService, UrlShorteningService>();
-
-// Configure JWT Authentication
-var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = Encoding.UTF8.GetBytes(jwtSettings["Secret"]!);
-
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings["Issuer"],
-        ValidAudience = jwtSettings["Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(secretKey)
-    };
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
 });
+
+// MongoDB Configuration
+var mongoDbSettings = builder.Configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
+builder.Services.AddSingleton(mongoDbSettings!);
+builder.Services.AddSingleton<IMongoClient>(new MongoClient(mongoDbSettings!.ConnectionString));
+
+// Redis Configuration
+var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString")
+                            ?? "redis:6379,abortConnect=false";
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
+
+builder.Services.AddScoped<IUrlService, UrlService>();
+builder.Services.AddControllers();
+
+// JWT Authentication — validate token trực tiếp, không qua Gateway
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]
+                    ?? "SuperSecretKeyForJwtTokenGenerationDonotUseInProduction")),
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "UserManagement.Api",
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"] ?? "UrlShortenerPlatform",
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var path = context.Request.Path;
+                var header = context.Request.Headers["Authorization"].ToString();
+                Console.WriteLine($"[JWT] OnMessageReceived path={path} header='{header}'");
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                Console.WriteLine($"[JWT] Auth Failed: {context.Exception.GetType().Name} — {context.Exception.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var userId = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+                Console.WriteLine($"[JWT] Token validated for userId: {userId}");
+                return Task.CompletedTask;
+            }
+        };
+    });
 
 builder.Services.AddAuthorization();
 
-// Add Swagger services with JWT support
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "UrlManagement.Api", Version = "v1" });
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
-    });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
 app.Run();
 
 public partial class Program { }
