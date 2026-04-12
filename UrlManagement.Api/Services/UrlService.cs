@@ -65,14 +65,14 @@ public class UrlService : IUrlService
         
         var urlRecord = await _urls.FindOneAndUpdateAsync(filter, update);
 
-        if (urlRecord != null)
+        if (urlRecord != null && !string.IsNullOrEmpty(urlRecord.ShortUrl))
         {
             // Publish UrlClickedEvent
             await _publishEndpoint.Publish<IUrlClickedEvent>(new
             {
-                ShortCode = shortCode,
+                ShortCode = urlRecord.ShortUrl,
                 ClickedAt = DateTime.UtcNow,
-                IpAddress = (string?)null // Could be added from HttpContext if needed
+                IpAddress = (string?)null
             });
         }
 

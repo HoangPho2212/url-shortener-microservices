@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using UserManagement.Api.Data;
+using UserManagement.Api.DTOs;
 using UserManagement.Api.Models;
+using UserManagement.Api.Services;
+using MassTransit;
+using Shared.Contracts;
+using BC = BCrypt.Net.BCrypt;
 
 namespace UserManagement.Api.Controllers;
 
@@ -11,37 +14,64 @@ namespace UserManagement.Api.Controllers;
 [Route("api/[controller]")]
 public class UsersController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly IUserRepository _userRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public UsersController(AppDbContext context)
+    public UsersController(IUserRepository userRepository, IPublishEndpoint publishEndpoint)
     {
-        _context = context;
+        _userRepository = userRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<User>>> GetUsers()
+    public async Task<ActionResult> GetUsers()
     {
-        return await _context.Users.ToListAsync();
+        var users = await _userRepository.GetAllAsync();
+        var response = users.Select(u => new { u.Id, u.Username, u.Email, u.CreatedAt });
+        return Ok(response);
     }
 
-    [HttpGet("{id}")]
-    public async Task<ActionResult<User>> GetUser(Guid id)
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult> GetUser(Guid id)
     {
-        var user = await _context.Users.FindAsync(id);
+        var user = await _userRepository.GetByIdAsync(id);
+        if (user == null) return NotFound();
 
-        if (user == null)
+        return Ok(new { user.Id, user.Username, user.Email, user.CreatedAt });
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult> UpdateUser(Guid id, UserCreateDto inputUser)
+    {
+        var user = await _userRepository.GetByIdAsync(id);
+        if (user == null) return NotFound();
+
+        user.Username = inputUser.Username;
+        user.Email = inputUser.Email;
+        if (!string.IsNullOrWhiteSpace(inputUser.Password))
         {
-            return NotFound();
+            user.PasswordHash = BC.HashPassword(inputUser.Password);
         }
 
-        return user;
+        await _userRepository.UpdateAsync(id, user);
+        return NoContent();
     }
 
-    [HttpGet("me")]
-    public IActionResult GetMe()
+    [HttpDelete("{id:guid}")]
+    public async Task<ActionResult> DeleteUser(Guid id)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var username = User.Identity?.Name;
-        return Ok(new { userId, username });
+        var user = await _userRepository.GetByIdAsync(id);
+        if (user == null) return NotFound();
+
+        await _userRepository.DeleteAsync(id);
+
+        // Publish Event to RabbitMQ
+        await _publishEndpoint.Publish<IUserAccountDeletedEvent>(new
+        {
+            UserId = user.Id,
+            user.Email
+        });
+
+        return Ok(new { user.Id, user.Username, user.Email });
     }
 }

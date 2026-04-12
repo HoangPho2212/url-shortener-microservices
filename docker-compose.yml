@@ -1,0 +1,118 @@
+services:
+  # Infrastructure
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4.0-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Custom Services
+  user-api:
+    image: url-shortener-user-api
+    container_name: user-api
+    build:
+      context: .
+      dockerfile: UserManagement.Api/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - MongoDbSettings__ConnectionString=mongodb://mongodb:27017
+      - RabbitMq__Host=rabbitmq
+      - Jwt__Key=SuperSecretKeyForJwtTokenGenerationDonotUseInProduction
+      - Jwt__Issuer=UserManagement.Api
+      - Jwt__Audience=UrlShortenerPlatform
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "5015:8080"
+
+  url-api:
+    image: url-shortener-url-api
+    container_name: url-api
+    build:
+      context: .
+      dockerfile: UrlManagement.Api/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - MongoDbSettings__ConnectionString=mongodb://mongodb:27017
+      - Redis__ConnectionString=redis:6379,abortConnect=false
+      - RabbitMq__Host=rabbitmq
+      - Jwt__Key=SuperSecretKeyForJwtTokenGenerationDonotUseInProduction
+      - Jwt__Issuer=UserManagement.Api
+      - Jwt__Audience=UrlShortenerPlatform
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "5291:8080"
+
+  api-gateway:
+    image: url-shortener-gateway
+    container_name: api-gateway
+    build:
+      context: .
+      dockerfile: ApiGateway/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - Jwt__Key=SuperSecretKeyForJwtTokenGenerationDonotUseInProduction
+      - Jwt__Issuer=UserManagement.Api
+      - Jwt__Audience=UrlShortenerPlatform
+    depends_on:
+      user-api:
+        condition: service_started
+      url-api:
+        condition: service_started
+    ports:
+      - "5130:8080"
+
+  frontend:
+    image: url-shortener-frontend
+    container_name: frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      api-gateway:
+        condition: service_started
+    ports:
+      - "5173:80"
+
+volumes:
+  mongo_data:

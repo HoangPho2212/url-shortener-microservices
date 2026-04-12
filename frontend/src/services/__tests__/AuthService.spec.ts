@@ -10,7 +10,13 @@ vi.mock('../api', () => ({
 
 describe('AuthService', () => {
   it('login should return token on success', async () => {
-    const mockResponse = { data: { token: 'test-token', username: 'user', email: 'user@test.com' } };
+    const mockResponse = { 
+      data: { token: 'test-token', username: 'user', email: 'user@test.com' },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {} as any
+    };
     vi.mocked(api.post).mockResolvedValue(mockResponse);
 
     const result = await authService.login({ email: 'user@test.com', password: 'password' });
@@ -20,7 +26,13 @@ describe('AuthService', () => {
   });
 
   it('register should call api post', async () => {
-    vi.mocked(api.post).mockResolvedValue({ data: {} });
+    vi.mocked(api.post).mockResolvedValue({ 
+      data: {},
+      status: 201,
+      statusText: 'Created',
+      headers: {},
+      config: {} as any
+    });
 
     await authService.register({ username: 'user', email: 'user@test.com', password: 'password' });
 
